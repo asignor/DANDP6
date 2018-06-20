@@ -1,0 +1,605 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+#Wine Appreciation by The Numbers 
+
+####*by Anna Signor*
+
+
+What is "good" wine? This is a captivating subject, since so much actual economy rides on judgements considered by many to be elusive. 
+
+Join me in exploring data pertaining to the analysis of over 6,000 instances of Portuguese Vinho Verde, juxtaposing objective measurements with the quality ratings of experts. Can we decode what makes an expert give a wine a high quality mark? Are they biased toward reds or whites? Are "better" wines less sweet? Let's find out.
+
+(I reccomend this read to go along one glass of your favorite wine.)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+library(dplyr)
+library(tidyr)
+library(caTools)
+library(ggplot2)
+library(memisc)
+library(lattice)
+library(reshape2)
+```
+
+```{r echo=FALSE, Load_the_Data}
+wines <- read.csv('wineQualityAll.csv')
+```
+
+## Sample the data
+
+Let's get to know our data set. You can find the complete information furnished buy the publishers [here](link=https://s3.amazonaws.com/udacity-hosted-downloads/ud651/wineQualityInfo.txt).
+In their words:
+
+>...two datasets were created, using red and white wine samples. The inputs include objective tests (e.g. PH values) and the output is based on sensory data (median of at least 3 evaluations made by wine experts). Each expert graded the wine quality between 0 (very bad) and 10 (very excellent).
+
+I merged the two set and added a column called type to indicate red or white, so we have the columns:
+```{r echo=FALSE, Sample}
+names(wines)
+```
+
+Please note that I merged the two sets together and the field ```type``` indicates red or white. 
+You can refer to the [same link as above ](link=https://s3.amazonaws.com/udacity-hosted-downloads/ud651/wineQualityInfo.txt) to get detailed definitions.
+
+---
+
+# Univariate Plots Section
+
+The first thing I'd like to know if if I have to account for a bias toward red or white in terms of quality. Let's boxplot them side by side.
+
+```{r echo=FALSE, Plot_q}
+plot <- ggplot(wines, aes(type, quality))
+plot + geom_boxplot()
+```
+
+We learn a lot from this. There seems to be no bias, for both types of wine we have most values between 5 and 6, and a median of 6. 
+
+I am curious about the outliers. Let's check the distribuition in a side-by-side histogram.
+
+```{r echo=FALSE, histo_sbs}
+plot <- ggplot(wines, aes(x=quality, color=type))
+plot + geom_histogram(position='dodge')
+```
+
+And what do they lood like combined?
+
+```{r echo=FALSE, histo_q}
+plot <- ggplot(wines, aes(x=quality))
+plot + geom_histogram(position='dodge')
+```
+
+Both look like a nice normal-like disribuition. In the back of my head, I am putting a pin on this. If I try to write a predictor for the quality, I need to be careful. We already know this distribuition, so any valuable predictor needs to be better than just guessing around the mean, because this could produce deceptively good results without actually adding value to a simple study of the distribuition.
+
+I wonder which measured attributes do not behave that way.
+
+```{r echo=FALSE, histo_lattice}
+
+d <- melt(wines[])
+ggplot(d, aes(x = value)) + 
+    facet_wrap(~variable, scales = "free_x") + 
+    geom_histogram()
+```
+
+This is how it looks for whites:
+
+```{r echo=FALSE, histo_lattice_whi}
+whis <- filter(wines, type == 'white')
+d <- melt(whis[])
+ggplot(d, aes(x = value)) + 
+    facet_wrap(~variable, scales = "free_x") + 
+    geom_histogram()
+```
+
+And for reds:
+
+```{r echo=FALSE, histo_lattice_red}
+reds <- filter(wines, type == 'red')
+d <- melt(reds[])
+ggplot(d, aes(x = value)) + 
+    facet_wrap(~variable, scales = "free_x") + 
+    geom_histogram()
+```
+
+## Univariate Analysis
+
+From this one-dimensional analysis I learned a lot. Firstly, the quality grades are in a normal-like distribution, so will need to be very strict before celebrating the accuracy of any predictive model. I am interested in exploring chlorides and residual sugar because of the extreme distribuitions I am seeing, and I am interested in the volatile acidity in red wines, because of the popular widsom around red wines having to "breathe". 
+
+It is very hard to get any answers without exploring the relationships between the different features and their relationships to the quality. We do that next.
+
+------
+
+# Bivariate Plots Section
+
+One feature that stood out to me was the volatile acidity. This is how I understood from their documentation: volatile acidity is the kind that goes away in time after opening a bottle of wine, versus the actual acidity that "belongs" in the wine. I always heard that the best red wines don't need to breathe, you can drink as soon as the bottle is opened. (And I never heard of white wines needing to breathe at all.) I wonder if that is related to the volatile acidity, and if we can see that in the data.
+
+Let's first plot the volatile acidity against the quality.
+
+```{r echo=FALSE, Plot_vaxq}
+reds <- filter(wines, type == 'red')
+plot<-ggplot(reds, aes(x=volatile.acidity, y=quality, color='salmon', alpha=0.1))
+plot + geom_point()
+```
+
+Not very informative. Some summarizing is in order.
+
+```{r echo=FALSE, Plot_0}
+acid_sum <- 
+  dplyr::select(reds, quality, volatile.acidity) %>%
+  dplyr::group_by(quality) %>%
+  dplyr::summarise(avg_volacid = mean(volatile.acidity))
+plot <- ggplot(acid_sum, aes(x=quality, y=avg_volacid)) 
+plot + geom_line(color='salmon') + geom_point(size=3, color='salmon')
+```
+
+There seems to be a clear trend where the quality decreases with the volatile acidity. We are on to something. 
+
+What happens if we include the whites? I would expect the relationshit to be different than with the reds, because I never heard of white wine having to breathe. 
+
+```{r echo=FALSE, Plot_0a}
+acid_sum <- 
+wines %>% 
+  dplyr::select(quality, type, volatile.acidity) %>%
+  dplyr::group_by(quality, type) %>%
+  dplyr::summarise(avg_volacid = mean(volatile.acidity))
+plot <- ggplot(acid_sum, 
+               aes(x=quality, y=avg_volacid, color=type)) 
+plot + geom_line() + geom_point(size=3)
+```
+
+It seems like, in whites, not only the quality does not decrease with volatile acidity increase, but also that it is significantly and consistently less than reds. It also seems that low quality wines have higher volatile acidity than their type mates, no matter what.
+
+
+A popular conception is that sweet wines are "bad". Let's take stab at that one. 
+
+```{r echo=FALSE, Plot_1}
+sugar_sum<- 
+wines %>% 
+  dplyr::select(quality, type, residual.sugar) %>%
+  dplyr::group_by(quality, type) %>%
+  dplyr::summarise(avg_sugar = mean(residual.sugar))
+#sugar_sum
+plot <- ggplot(sugar_sum, 
+               aes(x=quality, y=avg_sugar, color=type)) 
+plot + geom_line() + geom_point(size=3)
+```
+
+Nope, that one is a bust. At least for Vinho Verde, this is not true. All we can say is that white wines in that family are consistently higher in sugar content, which surprised me a lot.
+
+Let's look at the impact of free sulfides into quality:
+
+```{r echo=FALSE, Plot_2}
+free_sulf_sum <- 
+wines %>% 
+  dplyr::select(quality, type, free.sulfur.dioxide) %>%
+  dplyr::group_by(quality, type) %>%
+  dplyr::summarise(avg_freesulf = mean(free.sulfur.dioxide))
+plot <- ggplot(free_sulf_sum, 
+               aes(x=quality, y=avg_freesulf, color=type)) 
+plot + geom_line() + geom_point(size=3)
+```
+
+Not very illuminating. The biggest piece of information is the difference between reds and whites. It seems like, at least by itself, the free sulfide content has no clear impact on the quality.
+
+Volatile acidity vs acidity:
+
+```{r echo=FALSE, Plot_3}
+acidities <- 
+wines %>% 
+  dplyr::select(volatile_acidity = volatile.acidity, type, fixed_acidity = fixed.acidity) %>%
+  dplyr::group_by(fixed_acidity, type) %>%
+  dplyr::summarise(avv_acidity = mean(volatile_acidity))
+plot <- ggplot(acidities, 
+               aes(x=fixed_acidity, y=avv_acidity, color=type)) 
+plot + geom_line() + geom_point(size=1)
+```
+
+There seems to be something of a correlation, but only in reds. I'd also guess that it is conditioned on other variables, which may be responsible for the outliars. I am just going to take some guesses on what they could be, maybe I'll get lucky. So I am plotting just the red part of the same graph above, with the color being each one of my guesses. If the outliars tend to appear in a color that stands out, that will likely be my lurking variable.
+
+Citric Acid:
+
+```{r echo=FALSE, Plot_4}
+acidities <- 
+reds %>% 
+  dplyr::select(volatile_acidity = volatile.acidity, c_acid = citric.acid, fixed_acidity = fixed.acidity) %>%
+  dplyr::group_by(fixed_acidity) %>%
+  dplyr::summarise(avv_acidity = mean(volatile_acidity), avc_acid = mean(c_acid))
+plot <- ggplot(acidities, 
+               aes(x=fixed_acidity, y=avv_acidity, color=avc_acid)) 
+plot + geom_line() + geom_point(size=1)
+```
+
+
+Sugar content:
+
+```{r echo=FALSE, Plot_5}
+acidities <- 
+reds %>% 
+  dplyr::select(volatile_acidity = volatile.acidity, sugar=residual.sugar, fixed_acidity = fixed.acidity) %>%
+  dplyr::group_by(fixed_acidity) %>%
+  dplyr::summarise(avv_acidity = mean(volatile_acidity), lurk_cand = mean(sugar))
+plot <- ggplot(acidities, 
+               aes(x=fixed_acidity, y=avv_acidity, color=lurk_cand)) 
+plot + geom_line() + geom_point(size=1)
+```
+
+Sulphates:
+
+```{r echo=FALSE, Plot_6}
+acidities <- 
+reds %>% 
+  dplyr::select(volatile_acidity = volatile.acidity, sulphates, fixed_acidity = fixed.acidity) %>%
+  dplyr::group_by(fixed_acidity) %>%
+  dplyr::summarise(avv_acidity = mean(volatile_acidity), lurk_cand = mean(sulphates))
+plot <- ggplot(acidities, 
+               aes(x=fixed_acidity, y=avv_acidity, color=lurk_cand)) 
+plot + geom_line() + geom_point(size=1)
+```
+
+
+Alcohol:
+
+```{r echo=FALSE, Plot_7}
+acidities <- 
+reds %>% 
+  dplyr::select(volatile_acidity = volatile.acidity, alcohol, fixed_acidity = fixed.acidity) %>%
+  dplyr::group_by(fixed_acidity) %>%
+  dplyr::summarise(avv_acidity = mean(volatile_acidity), lurk_cand = mean(alcohol))
+plot <- ggplot(acidities, 
+               aes(x=fixed_acidity, y=avv_acidity, color=lurk_cand)) 
+plot + geom_line() + geom_point(size=1)
+```
+
+Chlorides:
+
+```{r echo=FALSE, Plot_8}
+acidities <- 
+reds %>% 
+  dplyr::select(volatile_acidity = volatile.acidity, chlorides, fixed_acidity = fixed.acidity) %>%
+  dplyr::group_by(fixed_acidity) %>%
+  dplyr::summarise(avv_acidity = mean(volatile_acidity), lurk_cand = mean(chlorides))
+plot <- ggplot(acidities, 
+               aes(x=fixed_acidity, y=avv_acidity, color=lurk_cand)) 
+plot + geom_line() + geom_point(size=1)
+```
+This one looks more interesting, but not a Jackpot.
+
+Density:
+
+```{r echo=FALSE, Plot_9}
+acidities <- 
+reds %>% 
+  dplyr::select(volatile_acidity = volatile.acidity, density, fixed_acidity = fixed.acidity) %>%
+  dplyr::group_by(fixed_acidity) %>%
+  dplyr::summarise(avv_acidity = mean(volatile_acidity), lurk_cand = mean(density))
+plot <- ggplot(acidities, 
+               aes(x=fixed_acidity, y=avv_acidity, color=lurk_cand)) 
+plot + geom_line() + geom_point(size=1)
+```
+
+This one just looks well correlated with the fixed acidity. Let's look at that:
+
+Density
+
+```{r echo=FALSE, Plot_10}
+
+plot <- ggplot(acidities, aes(x=fixed_acidity, y=lurk_cand, color='salmon')) 
+plot + geom_line() + geom_point(size=1)
+```
+
+Yes, there is clearly a correlation.
+
+Moving on, I'd like to see if there is an apparent correlation between alcohol content and quality:
+
+```{r echo=FALSE, Plot_11}
+qual_alc <- 
+wines %>% 
+  dplyr::select(quality, type, alcohol) %>%
+  dplyr::group_by(quality, type) %>%
+  dplyr::summarise(av_alcohol = mean(alcohol))
+plot <- ggplot(qual_alc, 
+               aes(x=quality, y=av_alcohol, color=type)) 
+plot + geom_line() + geom_point(size=1)
+```
+
+Now, this is interesting. This seems to be a very relevant factor.
+
+
+```{r echo=FALSE, Plot_12}
+d <- melt(wines[])
+ggplot(d, aes(x = value)) + 
+    facet_wrap(~variable, scales = "free_x") + 
+    geom_histogram()
+```
+
+Let's look at each variable besides the quality and type plotted against quality (grouped in averages) and pivoted by type. This should give us a good high-level view of the correlations between the variables and their conributions to the quality feature.
+```{r echo=FALSE, Plot_13}
+wines %>% 
+  dplyr::select(quality, type, #group_by arguments
+                fixed.acidity, 
+                volatile.acidity, 
+                citric.acid,
+                residual.sugar, 
+                chlorides, 
+                free.sulfur.dioxide, 
+                total.sulfur.dioxide,
+                density, 
+                pH, 
+                sulphates,     
+                alcohol             
+                )%>%
+  dplyr::group_by(quality, type) %>%
+  dplyr::summarise(av_acic = mean(fixed.acidity), 
+                   av_volacid = mean(volatile.acidity),
+                   av_citacid = mean(citric.acid),
+                   av_sugar = mean(residual.sugar),
+                   av_chlor = mean(chlorides),
+                   av_freesulf = mean(free.sulfur.dioxide),
+                   av_totsulf = mean(total.sulfur.dioxide),
+                   av_dens = mean(density),
+                   av_pH = mean(pH),
+                   av_sulpha = mean(sulphates),
+                   av_alco = mean(alcohol)
+                   ) %>% 
+  gather(-quality, -type, key = "var", value = "value") %>%
+  ggplot(aes(x = quality, y = value, color = type)) +
+    geom_point() + geom_line() +
+    facet_wrap(~var, scales = "free")
+```
+
+It certainly looks like there are a lot of relevant features with good correlations with the quality, as well as features that make up similar shapes, indicating that some of them may be correlated to each other. For example, the free sulfide and sugar content look similar, and the sulphate and volatile acidity seem to be inversely correlated.
+
+
+# Bivariate Analysis
+
+The first observation that stands our to me is the "separation" between red and white wines. Only one of the features shows as if type is not a discerning factor, which is alcohol. Several of them have a similar shape (indicative of the correlational behavior with the quality), but are separated by a gap. Most concerning in terms of continuing to analyze both types together, some featues seem to have different behavior all together. In some cases, such as sulphate and volatile acidity, a feature that matters for red wine is non-discerning for white wines, and in other cases, such as pH, they have inverse behavior, where for one type the correlation is positive and for the other, negative. What his tells me is that if I continue with this approach and try to build one model to predict all wines, every time I tune the parameters I could be improving the predictive power for one group while damaging it for the other. 
+
+For this reason coupled with my own personal preference, **I will proceed with an exploration for red wines only**. 
+
+It certainly looks like there are a lot of relevant features with good correlations with the quality. The ones that most stand out to me are alcohol, citric acid, free sulfides and volatile acidity. 
+
+Some pairs of features make up similar shapes, indicating that some of them may be correlated to each other. For example, the free sulfide and total sulfide look very similar, and the sulphate and volatile acidity seem to be inversely correlated.
+
+------------
+
+# Multivariate Plots Section
+
+
+The first thing I would like to check are the correlations between each feature and quality, now just for red wines:
+
+```{r echo=FALSE, Plot_14}
+
+reds <- 
+  wines %>% 
+  dplyr::filter(type == 'red') %>%
+  dplyr::select(quality, 
+                fixed.acidity, 
+                volatile.acidity, 
+                citric.acid,
+                residual.sugar, 
+                chlorides, 
+                free.sulfur.dioxide, 
+                total.sulfur.dioxide,
+                density, 
+                pH, 
+                sulphates,     
+                alcohol             
+                )
+reds %>%
+  dplyr::group_by(quality) %>%
+  dplyr::summarise(av_acic = mean(fixed.acidity), 
+                   av_volacid = mean(volatile.acidity),
+                   av_citacid = mean(citric.acid),
+                   av_sugar = mean(residual.sugar),
+                   av_chlor = mean(chlorides),
+                   av_freesulf = mean(free.sulfur.dioxide),
+                   av_totsulf = mean(total.sulfur.dioxide),
+                   av_dens = mean(density),
+                   av_pH = mean(pH),
+                   av_sulpha = mean(sulphates),
+                   av_alco = mean(alcohol)
+                   ) %>% 
+  gather(-quality, key = "var", value = "value") %>%
+  ggplot(aes(x = quality, y = value, color='salmon')) +
+    geom_point() + geom_line() +
+    facet_wrap(~var, scales = "free")
+
+```
+
+It looks like a lot of these features are strong and discerning.
+Because of this, I will try a decision tree. Decision trees work best when the predicted value is categorical or ordered. So, let's call a wine "ge" for "good or excellent"" when the quality grade is 6 or more, and bm for "bad or mediocre" otherwise. Looking back at our distribuition, this seems reasonable.
+
+```{r echo=FALSE, Plot_15}
+plot <- ggplot(reds, aes(x=quality, color='salmon'))
+plot + geom_histogram(position='dodge')
+```
+
+```{r echo=FALSE, Output_0}
+reds$grade <- ifelse(reds$quality > 5, "ge", "mb")
+reds$grade_f <- factor(reds$grade)
+rev(reds[1:5, ])
+```
+
+As you can see, now we have a grade, which can only assume two values, and a factor column corresponding to it.
+Now, let's split the data in to train and test, at a 75% rate, and take a peek at the train set just to make sure everything looks normal.
+
+```{r echo=FALSE, Output_2}
+
+set.seed(101) 
+Y <- reds$grade_f
+sample = caTools::sample.split(Y, SplitRatio = 3/4)
+train = subset(reds, sample == TRUE)
+test  = subset(reds, sample == FALSE)
+rev(train[1:5, ])
+```
+
+Let's look at a representation of a decision tree using only the features volatile acidity and sulphates content. Here, I made a deliberate decision to use feature that give strong correlations, and to use one positively and one negatively correlated (or apparently so), to give us the best chance to see a decent tree. Using two features is in no way the best modeling strategy, but it yields a good graphical representation of how decision trees work. We will eventually include more features, and that will look impalatable as a graph.
+
+```{r echo=FALSE, Output_5}
+# Create the tree.
+  require(party)
+  tree <- ctree(
+  grade_f ~ 
+            + volatile.acidity 
+            + sulphates 
+          , 
+          data = train)
+plot(tree)
+```
+
+To understand how the decision tree is working, let's consider an example, from the test set.
+
+```{r echo-TRUE, Output_4}
+rev(test[8, ] )
+```
+
+This particular data point is a wine with a volatile acidity value of 0.31, suplphates at 0.58, and a quality rating of 5, which makes it a "mediocre or bad" wine, per our definition of grade. The diagram below shows how the tree above would predict this wine's quality.
+
+```{r pressure, echo=FALSE, out.width = '100%'}
+knitr::include_graphics("fig_1.png")
+```
+
+Picking just two features is a simplistic way to proceed (although I exercised judgement in picking them), but just for curiosity, let's lee what accuracy we got from that, by testing the model with data that was not used to build the tree, that is the test data.
+
+```{r echo=FALSE, Output_6}
+confMat <- table(test$grade_f, predict(tree, newdata=test, type="response"))
+sum(diag(confMat))/sum(confMat)
+```
+
+Not bad. Now, let's build a tree with all the features, and test the model on data this tree has never "seen".
+
+```{r echo=FALSE, Output_7}
+tree <- ctree(
+  grade_f ~ fixed.acidity 
+            + volatile.acidity 
+            + citric.acid 
+            + residual.sugar 
+            + chlorides
+            + free.sulfur.dioxide
+            + total.sulfur.dioxide
+            + density 
+            + pH 
+            + sulphates 
+            + alcohol
+            , data = train)
+confMat <- table(test$grade_f, predict(tree, newdata=test, type="response"))
+sum(diag(confMat))/sum(confMat)
+```
+
+The accuracy is 74%. This exploration ends here, a further project would involve tuning the parameters of the ctree with the ctree_control class and improve those out-of-the-box results.
+
+## Multivariate Analysis
+
+After plotting all the features against the quality, it was determined that all of theem seem relevant. I made the decision to create a new feature called grade, which segregates the records into two categories, and attempt to build a classifier.
+
+As part of this exploration, I built a starter tree, with just two features, and it was a surprise to see it yield an accuracy of 65%. The final tree is an out of the box binary tree trained on 75% of the data and scoring an accuracy of 74%.
+
+------
+
+# Final Plots and Summary
+
+### Plot One - why I chose to separate white from red
+```{r echo=FALSE, Plot_One}
+wines %>% 
+  dplyr::select(quality, type, #group_by arguments
+                fixed.acidity, 
+                volatile.acidity, 
+                citric.acid,
+                residual.sugar, 
+                chlorides, 
+                free.sulfur.dioxide, 
+                total.sulfur.dioxide,
+                density, 
+                pH, 
+                sulphates,     
+                alcohol             
+                )%>%
+  dplyr::group_by(quality, type) %>%
+  dplyr::summarise(fixed_acidity = mean(fixed.acidity), 
+                   volatile_acidity = mean(volatile.acidity),
+                   citric_acid = mean(citric.acid),
+                   residual_sugar = mean(residual.sugar),
+                   chlorides = mean(chlorides),
+                   free_sulfur_dioxide = mean(free.sulfur.dioxide),
+                   total_sulfur_dioxide = mean(total.sulfur.dioxide),
+                   density = mean(density),
+                   pH = mean(pH),
+                   sulphates = mean(sulphates),
+                   alcohol = mean(alcohol)
+                   ) %>% 
+  gather(-quality, -type, key = "var", value = "value") %>%
+  ggplot(aes(x = quality, y = value, color = type, fill=factor(type))) +
+    geom_point(alpha=0.5, shape=21) + geom_line() +
+    facet_wrap(~var, scales = "free")
+```
+
+
+Observe how for many of the features, the correlational behavior is dramatically different. Enphasis on Average pH, sulphate content, and acidity. The exploration of the relationships could proceed in a more focused manner done separately. There is no statistical or data reason why I chose reds, as both whites and reds look to have interesting and relevant data, it was a personal choice.
+
+### Plot Two -  alcohol content vs quality
+
+```{r echo=FALSE, Plot_Two}
+reds <- filter(wines, type == 'red')
+reds$grad <- ifelse(reds$quality > 5, "good or excellent", "mediocre or bad")
+reds$grade <- factor(reds$grad)
+plot <- ggplot(
+  reds)
+plot +
+  geom_violin(
+    aes(
+      group = quality, 
+      x=quality, 
+      y=alcohol, 
+      color = grade, 
+      fill=grade),
+      draw_quantiles = 0.5, 
+      scale='area', 
+      trim = TRUE, 
+      alpha=0.4) +
+  geom_hline(
+    aes(mapping), 
+    yintercept = median(reds$alcohol), 
+    color='grey', 
+    show.legend = FALSE) 
+```
+
+
+In the grouped violines plot above, a trend is noticiable, where the red wines with" highes alcohol content tent to score higher quality ratings. Separating the wines in "good or exellent" and mediocre or bad by color, the grey horizontal line, which is severing the plane by the median of alcohol content, will leave the a majority of good or excellent wines above it, and a majority of mediocre or bad wines belo
+
+### Plot Two -  volatile acidity vs quality
+```{r echo=FALSE, Plot_Three}
+reds <- filter(wines, type == 'red')
+reds$grad <- ifelse(reds$quality > 5, "good or excellent", "mediocre or bad")
+reds$grade <- factor(reds$grad)
+plot <- ggplot(
+  reds, 
+  aes(
+    group = quality, 
+    x=quality, 
+    y=volatile.acidity, 
+    color = grade, 
+    fill=grade, 
+    mapping))
+plot + 
+  geom_violin(
+    draw_quantiles = 0.5, 
+    scale='area', 
+    trim = TRUE, alpha=0.3) +
+  geom_hline(
+    aes(mapping), 
+    yintercept = median(reds$volatile.acidity), 
+    color='grey', 
+    show.legend = NA)
+```
+
+
+In similar fashion to the previous chart, a trend seems to present itself. In this case, the quality decreases with the volatile acidity. Higher quality wines are less and less likely to have a high amount of volatile acidity, and none of the wines graded good or excellent have more than 1.1 volatile acidity. 
+
+# Reflection
+
+This is a data set rich with features of significance, and while patterns emerge and are readily visible, more sophisticated analysis would be needed to render a well-performing predictive model. I posit the main reason for this is a reasonable amount of interdependency among the predictive freatures. We found at least one case of strong correlation, between alcohol contend and density, and I imagine there are more. The most insteresting part of this exploration, for me, was the volatile acidity and it's correlation with the score.
+
+An obvious next step, in my opinion, would be to fine tune and perhaps better structure a classifier. PCA, for example, come to mind, given the apparent dependency monsgt features. My predictive model of choice, in this case, would be a random forest classifier with PCA, and I would start by using the engineer feature "grade", which assumes only one of two values, before moving on to more granularity.
+
