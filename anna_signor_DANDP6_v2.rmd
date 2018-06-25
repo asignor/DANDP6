@@ -1,8 +1,8 @@
 ---
 output:
+  word_document: default
   html_document: default
   pdf_document: default
-  word_document: default
 ---
 
 ```{r global_options, include=FALSE}
@@ -767,10 +767,11 @@ The first thing to note here is that this is by no means a finished product, rat
 Vizualizing the accuracy of the model here would be difficult, as it would essentially consist of looking for yellow circles and green triangles. This is not the intention for this visualization, rather, I am plotting a look at the decision boundary. What we see above are 10 projections of 12-dimentional surface into 2-dimesional spaces spanned by alcohol and one of the other features, in each cell. The projection of the boundary is a line that bisects the plane leaving only yellow on one side, and only green on the other. 
 
 What I see are complicated geometries, which means my model is over-fitted to the train data. Next steps, for a next project, in pursuit of improving the quality of the predictor, are:
-  * transition to a random forest classifier or other hybrid method
-  * exclude outliers
-  * PCA
-  * feature transformation
+
+  - transition to a random forest classifier or other hybrid method
+  - exclude outliers
+  - PCA
+  - feature transformation
 
 # Reflection
 
